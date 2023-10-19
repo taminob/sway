@@ -828,19 +828,35 @@ static bool _spawn_swaybg(char **command) {
 			sway_log_errno(SWAY_ERROR, "execvp failed");
 			_exit(EXIT_FAILURE);
 		}
-		_exit(EXIT_SUCCESS);
+
+		// retry multiple times to test for failure;
+		// if process continues to run, it is considered to be successful
+		int swaybg_timeout = 10;
+		struct timespec sleep_time = { .tv_sec = 0, .tv_nsec = 1e6 };
+		int swaybg_status = 0;
+		while(swaybg_status == 0 && swaybg_timeout > 0) {
+			if (waitpid(pid, &swaybg_status, WNOHANG) < 0) {
+				sway_log_errno(SWAY_ERROR, "waitpid failed");
+				_exit(EXIT_FAILURE);
+			}
+			--swaybg_timeout;
+			nanosleep(&sleep_time, NULL);
+		}
+
+		_exit(WEXITSTATUS(swaybg_status));
 	}
 
 	if (close(sockets[1]) != 0) {
 		sway_log_errno(SWAY_ERROR, "close failed");
 		return false;
 	}
-	if (waitpid(pid, NULL, 0) < 0) {
+	int swaybg_status = 0;
+	if (waitpid(pid, &swaybg_status, 0) < 0) {
 		sway_log_errno(SWAY_ERROR, "waitpid failed");
 		return false;
 	}
 
-	return true;
+	return WEXITSTATUS(swaybg_status) == 0;
 }
 
 bool spawn_swaybg(void) {
